@@ -141,7 +141,14 @@ void saveSettings() {
 }
 
 String getHeader() {
-  IPAddress currentIP(local_ip[0], local_ip[1], local_ip[2], local_ip[3]);
+  uint8_t ip0 = (local_ip[0] == 0 || local_ip[0] == 255) ? 192 : local_ip[0];
+  uint8_t ip1 = (local_ip[0] == 0 || local_ip[0] == 255) ? 168 : local_ip[1];
+  uint8_t ip2 = (local_ip[0] == 0 || local_ip[0] == 255) ? 4   : local_ip[2];
+  uint8_t ip3 = (local_ip[0] == 0 || local_ip[0] == 255) ? 1   : local_ip[3];
+
+  IPAddress currentIP(ip0, ip1, ip2, ip3);
+  String ipStr = currentIP.toString();
+
   String html = "<!DOCTYPE html><html><head><meta charset='UTF-8'><meta name='viewport' content='width=device-width, initial-scale=1.0'>";
   html += "<title>NetReaper v" + VERSION + "</title>";
   html += "<style>body{font-family:Arial,sans-serif;background:#121212;color:#e0e0e0;text-align:center;padding:20px;margin:0;}";
@@ -153,9 +160,11 @@ String getHeader() {
   html += "input[type='text'], input[type='password']{width:90%;padding:10px;margin-top:5px;background:#2d2d2d;border:1px solid #444;color:#fff;border-radius:4px;}";
   html += ".footer{font-size:12px;color:#555;margin-top:20px;}</style></head><body>";
   html += "<h1>💀 NetReaper <span style='font-size:14px;color:#2196F3;'>v" + VERSION + "</span></h1>";
-  html += "<div class='nav'><a href='http://" + currentIP.toString() + "/'>Главная</a><a href='http://" + currentIP.toString() + "/settings'>Настройки</a></div>";
+  
+  html += "<div class='nav'><a href='http://" + ipStr + "/'>Главная</a><a href='http://" + ipStr + "/settings'>Настройки</a></div>";
   return html;
 }
+
 
 void handleRoot() {
   String html = getHeader();
