@@ -7,7 +7,7 @@ extern "C" {
   #include "user_interface.h"
 }
 
-const String VERSION = "1.2";
+const String VERSION = "1.3";
 
 char ap_ssid[32] = "NetReaper";
 char ap_password[64] = "password123";
@@ -33,6 +33,16 @@ struct WhitelistEntry {
   bool active;
 };
 WhitelistEntry whitelist[5];
+int whitelist_max_slots = 1;
+
+int beacon_count = 3;
+char beacon_ssids[5][32] = {
+  "🔑 Free_Wi-Fi_Unsecured",
+  "🕶️ NSA_Surveillance_Van",
+  "☠️ NetReaper_Zone",
+  "",
+  ""
+};
 
 struct ClientEntry {
   uint8_t mac[6];
@@ -57,19 +67,6 @@ uint8_t beacon_packet[128] = {
   0x00, 0x00,
   0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00, 0x00,
   0x64, 0x00, 0x01, 0x04
-};
-
-const char* fake_ssids[10] = {
-  "🔑 Free_Wi-Fi_Unsecured",
-  "🕶️ NSA_Surveillance_Van",
-  "☠️ NetReaper_Zone",
-  "🤖 CyberNet_Node_5",
-  "🌐 Public_Hotspot_Free",
-  "🛸 UFO_Communication",
-  "🔒 Secured_Network_5G",
-  "📺 Smart_TV_LivingRoom",
-  "☕ Coffee_Shop_Guest",
-  "🎮 Gaming_Router_99"
 };
 
 void sniffer_callback(uint8_t *buf, uint16_t len) {
@@ -115,19 +112,28 @@ void sniffer_callback(uint8_t *buf, uint16_t len) {
 }
 
 void loadSettings() {
-  EEPROM.begin(512);
-  if (EEPROM.read(0) == 99) {
+  EEPROM.begin(1024);
+  if (EEPROM.read(0) == 123) {
     EEPROM.get(5, ap_ssid);
     EEPROM.get(40, ap_password);
     EEPROM.get(110, whitelist);
     EEPROM.get(200, local_ip);
+    EEPROM.get(210, whitelist_max_slots);
+    EEPROM.get(220, beacon_count);
+    EEPROM.get(230, beacon_ssids);
   } else {
-    EEPROM.write(0, 99);
+    EEPROM.write(0, 123);
     EEPROM.put(5, ap_ssid);
     EEPROM.put(40, ap_password);
-    for(int i=0; i<5; i++) whitelist[i].active = false;
+    
+    whitelist_max_slots = 1;
+    for(int i = 0; i < 5; i++) whitelist[i].active = false;
+    
     EEPROM.put(110, whitelist);
     EEPROM.put(200, local_ip);
+    EEPROM.put(210, whitelist_max_slots);
+    EEPROM.put(220, beacon_count);
+    EEPROM.put(230, beacon_ssids);
     EEPROM.commit();
   }
 }
@@ -137,14 +143,17 @@ void saveSettings() {
   EEPROM.put(40, ap_password);
   EEPROM.put(110, whitelist);
   EEPROM.put(200, local_ip);
+  EEPROM.put(210, whitelist_max_slots);
+  EEPROM.put(220, beacon_count);
+  EEPROM.put(230, beacon_ssids);
   EEPROM.commit();
 }
 
 String getHeader() {
   uint8_t ip0 = (local_ip[0] == 0 || local_ip[0] == 255) ? 192 : local_ip[0];
-  uint8_t ip1 = (local_ip[0] == 0 || local_ip[0] == 255) ? 168 : local_ip[1];
-  uint8_t ip2 = (local_ip[0] == 0 || local_ip[0] == 255) ? 4   : local_ip[2];
-  uint8_t ip3 = (local_ip[0] == 0 || local_ip[0] == 255) ? 1   : local_ip[3];
+  uint8_t ip1 = (local_ip[1] == 0 || local_ip[1] == 255) ? 168 : local_ip[1];
+  uint8_t ip2 = (local_ip[2] == 0 || local_ip[2] == 255) ? 4   : local_ip[2];
+  uint8_t ip3 = (local_ip[3] == 0 || local_ip[3] == 255) ? 1   : local_ip[3];
 
   IPAddress currentIP(ip0, ip1, ip2, ip3);
   String ipStr = currentIP.toString();
@@ -157,14 +166,12 @@ String getHeader() {
   html += ".btn-stop{background:#f44336;} .btn-scan{background:#4CAF50;} .btn-save{background:#FF9800;} .btn-action{background:#9C27B0;}";
   html += ".box{background:#1e1e1e;padding:20px;border-radius:8px;max-width:500px;margin:0 auto 20px auto;box-shadow:0 4px 6px rgba(0,0,0,0.3);text-align:left;}";
   html += "h1, h3{text-align:center;} table{width:100%;border-collapse:collapse;margin-top:15px;} th,td{padding:10px;border-bottom:1px solid #333;text-align:left;font-size:14px;}";
-  html += "input[type='text'], input[type='password']{width:90%;padding:10px;margin-top:5px;background:#2d2d2d;border:1px solid #444;color:#fff;border-radius:4px;}";
-  html += ".footer{font-size:12px;color:#555;margin-top:20px;}</style></head><body>";
+  html += "input[type='text'], input[type='password'], select{width:90%;padding:10px;margin-top:5px;background:#2d2d2d;border:1px solid #444;color:#fff;border-radius:4px;}";
+  html += "select{width:95%;} .footer{font-size:12px;color:#555;margin-top:20px;}</style></head><body>";
   html += "<h1>💀 NetReaper <span style='font-size:14px;color:#2196F3;'>v" + VERSION + "</span></h1>";
-  
   html += "<div class='nav'><a href='http://" + ipStr + "/'>Главная</a><a href='http://" + ipStr + "/settings'>Настройки</a></div>";
   return html;
 }
-
 
 void handleRoot() {
   String html = getHeader();
@@ -176,7 +183,7 @@ void handleRoot() {
     html += "<p style='color:#f44336;font-weight:bold;text-align:center;'>АКТИВНО: ГЛУШЕНИЕ СЕТИ</p>";
     html += "<div style='text-align:center;'><a href='/stop'><button class='btn btn-stop'>ОСТАНОВИТЬ</button></a></div>";
   } else if (beacon_active) {
-    html += "<p style='color:#9C27B0;font-weight:bold;text-align:center;'>АКТИВНО: BEACON SPAM (10 сетей)</p>";
+    html += "<p style='color:#9C27B0;font-weight:bold;text-align:center;'>АКТИВНО: BEACON SPAM (" + String(beacon_count) + " сетей)</p>";
     html += "<div style='text-align:center;'><a href='/stop'><button class='btn btn-stop'>ОСТАНОВИТЬ</button></a></div>";
   } else if (client_scan_active) {
     html += "<p style='color:#FF9800;font-weight:bold;text-align:center;'>АКТИВНО: СКАНИРОВАНИЕ КЛИЕНТОВ...</p>";
@@ -185,7 +192,9 @@ void handleRoot() {
     html += "<p style='color:#4CAF50;font-weight:bold;text-align:center;'>Система готова</p>";
     html += "<div style='text-align:center;'>";
     html += "<a href='/scan'><button class='btn btn-scan'>Сканировать Роутеры</button></a>";
-    html += "<a href='/beacon-start'><button class='btn btn-action'>Запустить Beacon Spam</button></a>";
+    if (beacon_count > 0) {
+      html += "<a href='/beacon-start'><button class='btn btn-action'>Запустить Beacon Spam</button></a>";
+    }
     html += "</div>";
   }
   html += "</div>";
@@ -239,9 +248,32 @@ void handleSettings() {
   html += "</div>";
 
   html += "<div class='box'>";
+  html += "<h3>Настройки Beacon Spam</h3>";
+  html += "<form action='/save-beacon' method='POST'>";
+  html += "Количество фейковых сетей (0-5):<br>";
+  html += "<select name='b_count'>";
+  for(int i=0; i<=5; i++) {
+    html += "<option value='" + String(i) + "'" + (beacon_count == i ? " selected" : "") + ">" + String(i) + "</option>";
+  }
+  html += "</select><br><br>";
+  for(int i=0; i<5; i++) {
+    html += "Название сети " + String(i+1) + ":<br><input type='text' name='b_ssid_" + String(i) + "' value='" + String(beacon_ssids[i]) + "' placeholder='Пусто'><br><br>";
+  }
+  html += "<input type='submit' class='btn btn-action' value='Сохранить Beacon'>";
+  html += "</form>";
+  html += "</div>";
+
+  html += "<div class='box'>";
   html += "<h3>WhiteList (Исключения)</h3>";
   html += "<form action='/save-whitelist' method='POST'>";
-  for (int i = 0; i < 5; i++) {
+  html += "Доступно слотов для ввода:<br>";
+  html += "";
+  for(int i=1; i<=5; i++) {
+    html += "<option value='" + String(i) + "'" + (whitelist_max_slots == i ? " selected" : "") + ">" + String(i) + "</option>";
+  }
+  html += "</select><br><br>";
+  
+  for (int i = 0; i < whitelist_max_slots; i++) {
     String macStr = "";
     if (whitelist[i].active) {
       for (int j = 0; j < 6; j++) {
@@ -256,7 +288,6 @@ void handleSettings() {
   html += "<input type='submit' class='btn' value='Обновить Белый Список'>";
   html += "</form>";
   html += "</div>";
-
   html += "</body></html>";
   server.send(200, "text/html", html);
 }
@@ -282,10 +313,29 @@ void handleSaveConfig() {
   ESP.restart();
 }
 
+void handleSaveBeacon() {
+  if (server.hasArg("b_count")) {
+    beacon_count = server.arg("b_count").toInt();
+    for(int i=0; i<5; i++) {
+      String argName = "b_ssid_" + String(i);
+      if (server.hasArg(argName)) {
+        server.arg(argName).toCharArray(beacon_ssids[i], 32);
+      }
+    }
+    saveSettings();
+  }
+  server.sendHeader("Location", "/settings");
+  server.send(302, "text/plain", "");
+}
+
 void handleSaveWhitelist() {
+  if (server.hasArg("wl_slots")) {
+    whitelist_max_slots = server.arg("wl_slots").toInt();
+  }
+  
   for (int i = 0; i < 5; i++) {
     String argName = "wl_mac_" + String(i);
-    if (server.hasArg(argName)) {
+    if (i < whitelist_max_slots && server.hasArg(argName)) {
       String macStr = server.arg(argName);
       macStr.trim();
       if (macStr.length() == 17) {
@@ -297,6 +347,8 @@ void handleSaveWhitelist() {
       } else {
         whitelist[i].active = false;
       }
+    } else {
+      if (i >= whitelist_max_slots) whitelist[i].active = false;
     }
   }
   saveSettings();
@@ -415,10 +467,13 @@ void handleStop() {
 
 void send_beacon_frame(const char* ssid, int channel) {
   int ssid_len = strlen(ssid);
+  if(ssid_len == 0) return;
+
   for (int i = 0; i < 6; i++) {
     beacon_packet[10 + i] = random(256);
     beacon_packet[16 + i] = beacon_packet[10 + i];
   }
+  
   beacon_packet[37] = channel;
   beacon_packet[38] = 0x00;
   beacon_packet[39] = (uint8_t)ssid_len;
@@ -446,6 +501,7 @@ void setup() {
   server.on("/", handleRoot);
   server.on("/settings", handleSettings);
   server.on("/save-config", handleSaveConfig);
+  server.on("/save-beacon", handleSaveBeacon);
   server.on("/save-whitelist", handleSaveWhitelist);
   server.on("/scan", handleScan);
   server.on("/scan-clients", handleScanClients);
@@ -483,12 +539,12 @@ void loop() {
     delay(15); 
   }
 
-  if (beacon_active) {
+  if (beacon_active && beacon_count > 0) {
     wifi_promiscuous_enable(1);
     for (int c = 1; c <= 11; c++) {
       wifi_set_channel(c);
-      for (int i = 0; i < 10; i++) {
-        send_beacon_frame(fake_ssids[i], c);
+      for (int i = 0; i < beacon_count; i++) {
+        send_beacon_frame(beacon_ssids[i], c);
         delay(1);
       }
     }
